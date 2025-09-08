@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Own Translator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="nav">
+                <button class="back-btn" onclick="history.back()">← Back to Start</button>
+                <h1 class="title">My Own Translator ⭐1</h1>
+                <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="settings-panel">
+            <div class="settings-content">
+                <h3>Advanced settings <span class="close-btn" onclick="toggleSettings()">✗</span></h3>
+                <div class="model-info">
+                    <h4>Gemini 2.5 Pro</h4>
+                    <p><strong>gemini-2.5-pro</strong><br>
+                    <small>Our current state of the art model</small></p>
+                </div>
+                <div class="system-template">
+                    <h4>System instructions template</h4>
+                    <select class="template-select">
+                        <option value="react">React (TypeScript)</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="python">Python</option>
+                    </select>
+                    <p class="template-desc">The configuration is for working with React + TypeScript application. Assumes a basic structure with index.html and index.tsx. Code Assistant follows strict guidelines for using the Gemini API</p>
+                </div>
+                <div class="features-list">
+                    <div class="feature-item">Set output language</div>
+                    <div class="feature-item">Add more supported languages</div>
+                    <div class="feature-item">Enhanced Translation context detection</div>
+                    <div class="feature-item">Add pronunciation practice button</div>
+                    <div class="feature-item">Visual feedback for listening</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Mode Selection -->
+            <div class="mode-selection">
+                <p class="mode-text">상황을 선택하세요 (다시 말하면 예문을 볼 수 있습니다):</p>
+                <div class="mode-buttons">
+                    <button class="mode-btn active" data-mode="general">
+                        <span class="mode-icon">➕</span>
+                        <span class="mode-label">일반</span>
+                    </button>
+                    <button class="mode-btn" data-mode="travel">
+                        <span class="mode-icon">⚠️</span>
+                        <span class="mode-label">여행</span>
+                    </button>
+                    <button class="mode-btn" data-mode="business">
+                        <span class="mode-icon">💼</span>
+                        <span class="mode-label">비즈니스</span>
+                    </button>
+                    <button class="mode-btn" data-mode="study">
+                        <span class="mode-icon">🎓</span>
+                        <span class="mode-label">출장/학습</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Translation Interface -->
+            <div class="translation-interface">
+                <div class="translation-panel">
+                    <!-- Left Panel (Korean) -->
+                    <div class="input-panel">
+                        <div class="language-header">
+                            <select class="language-select" id="source-lang">
+                                <option value="ko">한국어</option>
+                                <option value="en">English</option>
+                                <option value="ja">日本語</option>
+                                <option value="zh">中文</option>
+                            </select>
+                        </div>
+                        <div class="input-area">
+                            <textarea 
+                                id="source-text" 
+                                class="text-input" 
+                                placeholder="어디에 있습니까? 말해주세요..."
+                                rows="4"
+                            ></textarea>
+                            <div class="input-controls">
+                                <button id="mic-btn-source" class="mic-btn">
+                                    <span class="mic-icon">🎤</span>
+                                </button>
+                                <button id="translate-btn" class="translate-btn">번역하기</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Swap Button -->
+                    <div class="swap-container">
+                        <button id="swap-btn" class="swap-btn" title="언어 바꾸기">
+                            <span class="swap-icon">⇄</span>
+                        </button>
+                    </div>
+
+                    <!-- Right Panel (Target Language) -->
+                    <div class="output-panel">
+                        <div class="language-header">
+                            <select class="language-select" id="target-lang">
+                                <option value="en">English</option>
+                                <option value="ko">한국어</option>
+                                <option value="ja">日本語</option>
+                                <option value="zh">中文</option>
+                            </select>
+                        </div>
+                        <div class="output-area">
+                            <textarea 
+                                id="target-text" 
+                                class="text-output" 
+                                placeholder="번역"
+                                rows="4"
+                                readonly
+                            ></textarea>
+                            <div class="output-controls">
+                                <button id="mic-btn-target" class="mic-btn">
+                                    <span class="mic-icon">🎤</span>
+                                </button>
+                                <button id="speak-btn-target" class="speak-btn">
+                                    <span class="speaker-icon">🔊</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Display -->
+                <div id="status-display" class="status-display"></div>
+
+                <!-- Sample Sentences -->
+                <div class="sample-sentences">
+                    <h4>예문 모음</h4>
+                    <div id="sample-list" class="sample-list">
+                        <!-- Sample sentences will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="history-section">
+                <h4>번역 기록</h4>
+                <div id="history-list" class="history-list">
+                    <!-- Translation history will be populated here -->
+                </div>
+                <button id="clear-history" class="clear-btn">기록 지우기</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>번역 중...</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
