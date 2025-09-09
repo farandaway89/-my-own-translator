@@ -270,27 +270,10 @@ function toggleRecording(type) {
     startRecording(type, button, textArea);
 }
 
-async function startRecording(type, button, textArea) {
+function startRecording(type, button, textArea) {
     const sourceLang = document.getElementById('source-lang').value;
     const targetLang = document.getElementById('target-lang').value;
     const lang = type === 'source' ? sourceLang : targetLang;
-    
-    // Edge-specific handling - skip pre-check for better compatibility
-    const isEdge = navigator.userAgent.toLowerCase().includes('edg');
-    
-    // Only do microphone pre-check for non-Edge browsers
-    if (!isEdge && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach(track => track.stop());
-            console.log('Microphone access confirmed');
-        } catch (micError) {
-            console.error('Microphone access error:', micError);
-            showMicrophoneError(micError);
-            stopRecording();
-            return;
-        }
-    }
     
     try {
         // Set language and target element
@@ -308,36 +291,16 @@ async function startRecording(type, button, textArea) {
             showStatus(`🎤 ${languageCodes[lang].name} 음성 인식 시작! 말씀해주세요...`, 'info');
         }
         
-        // Start recognition immediately for Edge, with delay for others
-        const delay = isEdge ? 0 : 50;
-        setTimeout(() => {
-            try {
-                recognition.start();
-            } catch (startError) {
-                console.error('Recognition start error:', startError);
-                handleRecognitionError(startError);
-                stopRecording();
-            }
-        }, delay);
+        // Start recognition directly - no pre-checks
+        recognition.start();
         
     } catch (error) {
-        console.error('Recognition setup error:', error);
+        console.error('Recognition start error:', error);
         handleRecognitionError(error);
         stopRecording();
     }
 }
 
-function showMicrophoneError(micError) {
-    if (micError.name === 'NotAllowedError') {
-        showStatus('❌ 마이크 권한이 거부되었습니다. 주소창 옆 🔒 아이콘을 클릭하여 마이크를 허용해주세요.', 'error');
-    } else if (micError.name === 'NotFoundError') {
-        showStatus('🎤 마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.', 'error');
-    } else if (micError.name === 'AbortError' || micError.name === 'NotReadableError') {
-        showStatus('🎤 다른 앱에서 마이크를 사용 중입니다. 다른 프로그램을 종료하고 다시 시도해주세요.', 'error');
-    } else {
-        showStatus('🎤 마이크에 접근할 수 없습니다: ' + micError.message, 'error');
-    }
-}
 
 function handleRecognitionError(error) {
     if (error.name === 'InvalidStateError') {
