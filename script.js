@@ -4,6 +4,11 @@ let recognition = null;
 let currentMode = 'general';
 let translationHistory = [];
 
+// Pronunciation scoring variables
+window.currentPronunciationMode = false;
+window.currentPronunciationTarget = '';
+let pronunciationHistory = [];
+
 // Sample sentences for different modes
 const sampleSentences = {
     general: [
@@ -48,7 +53,9 @@ const languageCodes = {
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
     loadTranslationHistory();
+    loadPronunciationFromStorage();
     updateSampleSentences();
+    setupPronunciationEventListeners();
 });
 
 function initializeApp() {
@@ -167,13 +174,21 @@ function initializeSpeechRecognition() {
             try {
                 if (event.results && event.results.length > 0 && event.results[0].length > 0) {
                     const result = event.results[0][0].transcript;
+                    const confidence = event.results[0][0].confidence || 0.8; // Default confidence if not provided
+                    
                     if (recognition.targetElement) {
                         recognition.targetElement.value = result;
                         if (recognition.targetElement.id === 'source-text') {
                             document.getElementById('translate-btn').disabled = false;
                         }
                     }
-                    showStatus('✅ 음성 인식 완료: ' + result, 'success');
+                    
+                    // Handle pronunciation mode
+                    if (recognition.pronunciationMode && recognition.pronunciationTarget) {
+                        handlePronunciationResult(result, confidence, recognition.pronunciationTarget);
+                    } else {
+                        showStatus('✅ 음성 인식 완료: ' + result, 'success');
+                    }
                 }
             } catch (error) {
                 console.error('Result processing error:', error);
@@ -260,53 +275,67 @@ async function startRecording(type, button, textArea) {
     const targetLang = document.getElementById('target-lang').value;
     const lang = type === 'source' ? sourceLang : targetLang;
     
-    // Check microphone access first (especially for Edge)
-    try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            // Test microphone access
+    // Edge-specific handling - skip pre-check for better compatibility
+    const isEdge = navigator.userAgent.toLowerCase().includes('edg');
+    
+    // Only do microphone pre-check for non-Edge browsers
+    if (!isEdge && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach(track => track.stop()); // Immediately stop
+            stream.getTracks().forEach(track => track.stop());
             console.log('Microphone access confirmed');
+        } catch (micError) {
+            console.error('Microphone access error:', micError);
+            showMicrophoneError(micError);
+            stopRecording();
+            return;
         }
-    } catch (micError) {
-        console.error('Microphone access error:', micError);
-        if (micError.name === 'NotAllowedError') {
-            showStatus('❌ 마이크 권한이 거부되었습니다. 주소창 옆 🔒 아이콘을 클릭하여 마이크를 허용해주세요.', 'error');
-        } else if (micError.name === 'NotFoundError') {
-            showStatus('🎤 마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.', 'error');
-        } else if (micError.name === 'AbortError' || micError.name === 'NotReadableError') {
-            showStatus('🎤 다른 앱에서 마이크를 사용 중입니다. 다른 프로그램을 종료하고 다시 시도해주세요.', 'error');
-        } else {
-            showStatus('🎤 마이크에 접근할 수 없습니다: ' + micError.message, 'error');
-        }
-        stopRecording();
-        return;
     }
     
     try {
         // Set language and target element
         recognition.lang = languageCodes[lang].speech;
         recognition.targetElement = textArea;
+        recognition.pronunciationMode = window.currentPronunciationMode || false;
+        recognition.pronunciationTarget = window.currentPronunciationTarget || '';
         
         // Add visual feedback
         button.classList.add('recording');
-        showStatus(`🎤 ${languageCodes[lang].name} 음성 인식 시작! 말씀해주세요...`, 'info');
         
-        // Start recognition with a small delay for Edge
+        if (recognition.pronunciationMode) {
+            showStatus(`🎯 발음 연습 모드: "${recognition.pronunciationTarget}" 따라 말해보세요!`, 'info');
+        } else {
+            showStatus(`🎤 ${languageCodes[lang].name} 음성 인식 시작! 말씀해주세요...`, 'info');
+        }
+        
+        // Start recognition immediately for Edge, with delay for others
+        const delay = isEdge ? 0 : 50;
         setTimeout(() => {
             try {
                 recognition.start();
             } catch (startError) {
-                console.error('Delayed start error:', startError);
+                console.error('Recognition start error:', startError);
                 handleRecognitionError(startError);
                 stopRecording();
             }
-        }, 100);
+        }, delay);
         
     } catch (error) {
         console.error('Recognition setup error:', error);
         handleRecognitionError(error);
         stopRecording();
+    }
+}
+
+function showMicrophoneError(micError) {
+    if (micError.name === 'NotAllowedError') {
+        showStatus('❌ 마이크 권한이 거부되었습니다. 주소창 옆 🔒 아이콘을 클릭하여 마이크를 허용해주세요.', 'error');
+    } else if (micError.name === 'NotFoundError') {
+        showStatus('🎤 마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.', 'error');
+    } else if (micError.name === 'AbortError' || micError.name === 'NotReadableError') {
+        showStatus('🎤 다른 앱에서 마이크를 사용 중입니다. 다른 프로그램을 종료하고 다시 시도해주세요.', 'error');
+    } else {
+        showStatus('🎤 마이크에 접근할 수 없습니다: ' + micError.message, 'error');
     }
 }
 
@@ -589,6 +618,321 @@ function showLoading(show) {
     } else {
         overlay.classList.remove('show');
     }
+}
+
+// Pronunciation scoring functions
+function handlePronunciationResult(spokenText, confidence, targetText) {
+    const score = calculatePronunciationScore(spokenText, confidence, targetText);
+    displayPronunciationScore(score, spokenText, targetText);
+    savePronunciationResult(spokenText, targetText, score);
+}
+
+function calculatePronunciationScore(spokenText, confidence, targetText) {
+    // Normalize texts for comparison
+    const normalizedSpoken = spokenText.toLowerCase().trim();
+    const normalizedTarget = targetText.toLowerCase().trim();
+    
+    // Base confidence score (0-100)
+    let baseScore = Math.round(confidence * 100);
+    
+    // Text similarity bonus/penalty
+    const similarity = calculateTextSimilarity(normalizedSpoken, normalizedTarget);
+    let similarityBonus = similarity * 20; // Up to 20 points bonus
+    
+    // Word count penalty for significantly different lengths
+    const spokenWords = normalizedSpoken.split(' ').length;
+    const targetWords = normalizedTarget.split(' ').length;
+    const lengthDifference = Math.abs(spokenWords - targetWords);
+    const lengthPenalty = lengthDifference * 5; // 5 points per word difference
+    
+    // Calculate final score
+    let finalScore = baseScore + similarityBonus - lengthPenalty;
+    
+    // Ensure score is between 0-100
+    finalScore = Math.max(0, Math.min(100, finalScore));
+    
+    return {
+        total: Math.round(finalScore),
+        confidence: Math.round(confidence * 100),
+        similarity: Math.round(similarity * 100),
+        details: {
+            spoken: spokenText,
+            target: targetText,
+            matchRate: similarity
+        }
+    };
+}
+
+function calculateTextSimilarity(text1, text2) {
+    // Simple Levenshtein distance-based similarity
+    const distance = levenshteinDistance(text1, text2);
+    const maxLength = Math.max(text1.length, text2.length);
+    return maxLength === 0 ? 1 : (maxLength - distance) / maxLength;
+}
+
+function levenshteinDistance(str1, str2) {
+    const matrix = Array(str2.length + 1).fill().map(() => Array(str1.length + 1).fill(0));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+        for (let i = 1; i <= str1.length; i++) {
+            const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+            matrix[j][i] = Math.min(
+                matrix[j - 1][i] + 1,     // deletion
+                matrix[j][i - 1] + 1,     // insertion
+                matrix[j - 1][i - 1] + cost // substitution
+            );
+        }
+    }
+    
+    return matrix[str2.length][str1.length];
+}
+
+function displayPronunciationScore(score, spokenText, targetText) {
+    const { total, confidence, similarity } = score;
+    
+    let message = `🎯 발음 점수: ${total}/100\n`;
+    message += `📝 말한 내용: "${spokenText}"\n`;
+    message += `🎯 목표 발음: "${targetText}"\n`;
+    
+    let feedback = '';
+    let statusType = 'success';
+    
+    if (total >= 90) {
+        feedback = '🌟 완벽해요! 훌륭한 발음입니다!';
+        statusType = 'success';
+    } else if (total >= 80) {
+        feedback = '👍 좋아요! 거의 완벽한 발음이에요!';
+        statusType = 'success';
+    } else if (total >= 70) {
+        feedback = '🙂 괜찮아요! 조금 더 연습해보세요.';
+        statusType = 'info';
+    } else if (total >= 60) {
+        feedback = '💪 연습이 필요해요. 다시 시도해보세요!';
+        statusType = 'warning';
+    } else {
+        feedback = '📚 더 많은 연습이 필요합니다. 천천히 또박또박 말해보세요!';
+        statusType = 'error';
+    }
+    
+    showStatus(feedback, statusType);
+    
+    // Show detailed results in pronunciation panel
+    updatePronunciationPanel(score);
+}
+
+function updatePronunciationPanel(score) {
+    const panel = document.getElementById('pronunciation-results');
+    if (!panel) return;
+    
+    const { total, confidence, similarity, details } = score;
+    
+    panel.innerHTML = `
+        <div class="score-display">
+            <div class="total-score">${total}/100</div>
+            <div class="score-breakdown">
+                <div class="score-item">
+                    <span class="score-label">음성 신뢰도:</span>
+                    <span class="score-value">${confidence}%</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">텍스트 일치도:</span>
+                    <span class="score-value">${similarity}%</span>
+                </div>
+            </div>
+            <div class="pronunciation-comparison">
+                <div class="spoken-text">
+                    <strong>말한 내용:</strong> "${details.spoken}"
+                </div>
+                <div class="target-text">
+                    <strong>목표 발음:</strong> "${details.target}"
+                </div>
+            </div>
+        </div>
+    `;
+    
+    panel.style.display = 'block';
+}
+
+function savePronunciationResult(spokenText, targetText, score) {
+    const result = {
+        spoken: spokenText,
+        target: targetText,
+        score: score.total,
+        confidence: score.confidence,
+        similarity: score.similarity,
+        timestamp: new Date().toLocaleString('ko-KR')
+    };
+    
+    pronunciationHistory.unshift(result);
+    
+    // Keep only last 20 pronunciation attempts
+    if (pronunciationHistory.length > 20) {
+        pronunciationHistory = pronunciationHistory.slice(0, 20);
+    }
+    
+    updatePronunciationHistory();
+    savePronunciationToStorage();
+}
+
+function updatePronunciationHistory() {
+    const historyContainer = document.getElementById('pronunciation-history');
+    if (!historyContainer) return;
+    
+    historyContainer.innerHTML = '';
+    
+    if (pronunciationHistory.length === 0) {
+        historyContainer.innerHTML = '<p style="color: #888; text-align: center;">발음 연습 기록이 없습니다.</p>';
+        return;
+    }
+    
+    pronunciationHistory.forEach((item, index) => {
+        const historyItem = document.createElement('div');
+        historyItem.className = 'pronunciation-history-item';
+        
+        const scoreClass = item.score >= 80 ? 'high-score' : item.score >= 60 ? 'medium-score' : 'low-score';
+        
+        historyItem.innerHTML = `
+            <div class="history-score ${scoreClass}">${item.score}/100</div>
+            <div class="history-content">
+                <div class="history-spoken">말한 내용: "${item.spoken}"</div>
+                <div class="history-target">목표 발음: "${item.target}"</div>
+                <div class="history-time">${item.timestamp}</div>
+            </div>
+        `;
+        
+        historyContainer.appendChild(historyItem);
+    });
+}
+
+function savePronunciationToStorage() {
+    try {
+        localStorage.setItem('pronunciationHistory', JSON.stringify(pronunciationHistory));
+    } catch (error) {
+        console.error('Failed to save pronunciation history:', error);
+    }
+}
+
+function loadPronunciationFromStorage() {
+    try {
+        const saved = localStorage.getItem('pronunciationHistory');
+        if (saved) {
+            pronunciationHistory = JSON.parse(saved);
+            updatePronunciationHistory();
+        }
+    } catch (error) {
+        console.error('Failed to load pronunciation history:', error);
+    }
+}
+
+// Pronunciation practice event listeners
+function setupPronunciationEventListeners() {
+    const toggleBtn = document.getElementById('toggle-pronunciation');
+    const startBtn = document.getElementById('start-pronunciation');
+    const clearBtn = document.getElementById('clear-pronunciation-history');
+    const targetInput = document.getElementById('pronunciation-target');
+    
+    // Toggle pronunciation practice section
+    toggleBtn.addEventListener('click', () => {
+        const practiceSection = document.getElementById('pronunciation-practice');
+        const isVisible = practiceSection.style.display !== 'none';
+        
+        if (isVisible) {
+            practiceSection.style.display = 'none';
+            toggleBtn.textContent = '연습 모드 켜기';
+            toggleBtn.classList.remove('active');
+            window.currentPronunciationMode = false;
+        } else {
+            practiceSection.style.display = 'block';
+            toggleBtn.textContent = '연습 모드 끄기';
+            toggleBtn.classList.add('active');
+        }
+    });
+    
+    // Start pronunciation practice
+    startBtn.addEventListener('click', () => {
+        const targetText = targetInput.value.trim();
+        if (!targetText) {
+            showStatus('❌ 연습할 문장을 입력해주세요.', 'error');
+            return;
+        }
+        
+        window.currentPronunciationMode = true;
+        window.currentPronunciationTarget = targetText;
+        
+        // Hide previous results
+        document.getElementById('pronunciation-results').style.display = 'none';
+        
+        // Start recording with pronunciation mode
+        const micBtn = document.getElementById('mic-btn-source');
+        const textArea = document.getElementById('source-text');
+        
+        // Clear the text area for pronunciation practice
+        textArea.value = '';
+        
+        startBtn.disabled = true;
+        startBtn.textContent = '연습 중...';
+        
+        // Auto-start recording
+        toggleRecording('source');
+        
+        setTimeout(() => {
+            startBtn.disabled = false;
+            startBtn.textContent = '발음 연습 시작';
+        }, 5000); // Re-enable after 5 seconds
+    });
+    
+    // Clear pronunciation history
+    clearBtn.addEventListener('click', () => {
+        if (confirm('발음 연습 기록을 모두 지우시겠습니까?')) {
+            pronunciationHistory = [];
+            updatePronunciationHistory();
+            savePronunciationToStorage();
+            showStatus('발음 연습 기록이 삭제되었습니다.', 'info');
+        }
+    });
+    
+    // Add sample pronunciation targets
+    const sampleTargets = [
+        'Hello, how are you?',
+        'Nice to meet you.',
+        'What\'s your name?',
+        'Where are you from?',
+        'Thank you very much.',
+        'Have a nice day!',
+        'Could you help me?',
+        'I\'m sorry, I don\'t understand.'
+    ];
+    
+    // Add sample pronunciation buttons
+    const practiceSection = document.getElementById('pronunciation-practice');
+    const samplesDiv = document.createElement('div');
+    samplesDiv.className = 'pronunciation-samples';
+    samplesDiv.innerHTML = `
+        <h5>📝 연습 예문</h5>
+        <div class="sample-targets">
+            ${sampleTargets.map(target => `
+                <button class="sample-target-btn" data-target="${target}">
+                    ${target}
+                </button>
+            `).join('')}
+        </div>
+    `;
+    
+    // Insert before pronunciation tips
+    const tipsSection = practiceSection.querySelector('.pronunciation-tips');
+    practiceSection.insertBefore(samplesDiv, tipsSection);
+    
+    // Add click handlers for sample targets
+    practiceSection.addEventListener('click', (e) => {
+        if (e.target.classList.contains('sample-target-btn')) {
+            const target = e.target.dataset.target;
+            targetInput.value = target;
+            showStatus('🎯 연습 문장이 설정되었습니다: ' + target, 'info');
+        }
+    });
 }
 
 // Close settings panel when clicking outside

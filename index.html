@@ -150,6 +150,44 @@
                     </ul>
                 </div>
 
+                <!-- Pronunciation Practice Section -->
+                <div class="pronunciation-section">
+                    <div class="pronunciation-header">
+                        <h4>🎯 발음 연습</h4>
+                        <button id="toggle-pronunciation" class="pronunciation-toggle-btn">연습 모드 켜기</button>
+                    </div>
+                    
+                    <div id="pronunciation-practice" class="pronunciation-practice" style="display: none;">
+                        <div class="pronunciation-input">
+                            <input type="text" id="pronunciation-target" class="pronunciation-target-input" 
+                                   placeholder="연습할 영어 문장을 입력하세요 (예: Hello, how are you?)">
+                            <button id="start-pronunciation" class="start-pronunciation-btn">발음 연습 시작</button>
+                        </div>
+                        
+                        <div id="pronunciation-results" class="pronunciation-results" style="display: none;">
+                            <!-- Pronunciation scores will be displayed here -->
+                        </div>
+                        
+                        <div class="pronunciation-tips">
+                            <h5>💡 발음 연습 팁</h5>
+                            <ul>
+                                <li>🗣️ 천천히, 또박또박 발음하세요</li>
+                                <li>🎤 조용한 환경에서 연습하세요</li>
+                                <li>🔄 여러 번 반복 연습하세요</li>
+                                <li>📚 짧은 문장부터 시작하세요</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="pronunciation-history-section">
+                            <h5>📊 연습 기록</h5>
+                            <div id="pronunciation-history" class="pronunciation-history">
+                                <!-- Pronunciation history will be populated here -->
+                            </div>
+                            <button id="clear-pronunciation-history" class="clear-pronunciation-btn">연습 기록 지우기</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Sample Sentences -->
                 <div class="sample-sentences">
                     <h4>예문 모음</h4>
