@@ -53,8 +53,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initializeApp() {
     // Check for speech recognition support
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        showStatus('음성 인식이 지원되지 않는 브라우저입니다.', 'error');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showStatus('음성 인식이 지원되지 않습니다. Chrome, Edge, Safari 브라우저를 사용해주세요.', 'error');
+    } else {
+        // Show welcome message with instructions
+        setTimeout(() => {
+            showStatus('🎤 마이크 버튼을 눌러 음성으로 번역해보세요! (마이크 권한 허용 필요)', 'info');
+        }, 1000);
     }
 
     // Event listeners
@@ -112,42 +118,86 @@ function setupEventListeners() {
 }
 
 function initializeSpeechRecognition() {
-    if ('webkitSpeechRecognition' in window) {
-        recognition = new webkitSpeechRecognition();
-    } else if ('SpeechRecognition' in window) {
-        recognition = new SpeechRecognition();
-    } else {
+    // Check for HTTPS requirement
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        console.warn('Speech recognition requires HTTPS');
+        showStatus('음성 인식은 HTTPS가 필요합니다.', 'warning');
+    }
+
+    // Initialize speech recognition with better browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+        console.error('Speech recognition not supported');
+        showStatus('이 브라우저는 음성 인식을 지원하지 않습니다.', 'error');
         return;
     }
 
+    recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = function() {
         console.log('Speech recognition started');
+        showStatus('음성 인식이 시작되었습니다. 말씀해주세요.', 'info');
     };
 
     recognition.onresult = function(event) {
-        const result = event.results[0][0].transcript;
-        if (recognition.targetElement) {
-            recognition.targetElement.value = result;
-            if (recognition.targetElement.id === 'source-text') {
-                document.getElementById('translate-btn').disabled = false;
+        if (event.results && event.results.length > 0) {
+            const result = event.results[0][0].transcript;
+            if (recognition.targetElement) {
+                recognition.targetElement.value = result;
+                if (recognition.targetElement.id === 'source-text') {
+                    document.getElementById('translate-btn').disabled = false;
+                }
             }
+            showStatus('음성 인식 완료: ' + result, 'success');
         }
-        showStatus('음성 인식 완료: ' + result, 'success');
     };
 
     recognition.onerror = function(event) {
         console.error('Speech recognition error:', event.error);
-        showStatus('음성 인식 오류: ' + event.error, 'error');
+        let errorMessage = '음성 인식 오류';
+        
+        switch(event.error) {
+            case 'not-allowed':
+                errorMessage = '마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.';
+                break;
+            case 'no-speech':
+                errorMessage = '음성이 감지되지 않았습니다. 다시 시도해주세요.';
+                break;
+            case 'network':
+                errorMessage = '네트워크 오류가 발생했습니다.';
+                break;
+            case 'service-not-allowed':
+                errorMessage = '음성 인식 서비스가 차단되었습니다. HTTPS 연결이 필요할 수 있습니다.';
+                break;
+            default:
+                errorMessage = '음성 인식 오류: ' + event.error;
+        }
+        
+        showStatus(errorMessage, 'error');
         stopRecording();
     };
 
     recognition.onend = function() {
+        console.log('Speech recognition ended');
         stopRecording();
     };
+
+    // Request microphone permission proactively
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function(stream) {
+                console.log('Microphone permission granted');
+                stream.getTracks().forEach(track => track.stop()); // Stop the stream
+            })
+            .catch(function(err) {
+                console.warn('Microphone permission denied:', err);
+                showStatus('마이크 권한이 필요합니다. 브라우저에서 권한을 허용해주세요.', 'warning');
+            });
+    }
 }
 
 function toggleRecording(type) {
@@ -155,28 +205,53 @@ function toggleRecording(type) {
     const textArea = document.getElementById(`${type}-text`);
 
     if (!recognition) {
-        showStatus('음성 인식이 지원되지 않습니다.', 'error');
+        showStatus('음성 인식이 지원되지 않습니다. Chrome, Edge, Safari를 사용해보세요.', 'error');
         return;
     }
 
     if (isRecording) {
         recognition.stop();
+        return;
+    }
+
+    // Check microphone permission first
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: 'microphone' }).then(function(result) {
+            if (result.state === 'denied') {
+                showStatus('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.', 'error');
+                return;
+            }
+            startRecording(type, button, textArea);
+        }).catch(function() {
+            // Fallback if permissions API is not supported
+            startRecording(type, button, textArea);
+        });
     } else {
-        const sourceLang = document.getElementById('source-lang').value;
-        const targetLang = document.getElementById('target-lang').value;
-        const lang = type === 'source' ? sourceLang : targetLang;
-        
-        recognition.lang = languageCodes[lang].speech;
-        recognition.targetElement = textArea;
-        
-        try {
-            recognition.start();
-            button.classList.add('recording');
-            isRecording = true;
-            showStatus(`음성 인식 시작 (${languageCodes[lang].name})`, 'info');
-        } catch (error) {
-            showStatus('음성 인식을 시작할 수 없습니다.', 'error');
+        startRecording(type, button, textArea);
+    }
+}
+
+function startRecording(type, button, textArea) {
+    const sourceLang = document.getElementById('source-lang').value;
+    const targetLang = document.getElementById('target-lang').value;
+    const lang = type === 'source' ? sourceLang : targetLang;
+    
+    recognition.lang = languageCodes[lang].speech;
+    recognition.targetElement = textArea;
+    
+    try {
+        recognition.start();
+        button.classList.add('recording');
+        isRecording = true;
+        showStatus(`🎤 ${languageCodes[lang].name} 음성 인식 중... (말씀해주세요)`, 'info');
+    } catch (error) {
+        console.error('Recognition start error:', error);
+        if (error.name === 'InvalidStateError') {
+            showStatus('음성 인식이 이미 실행 중입니다. 잠시 후 다시 시도해주세요.', 'error');
+        } else {
+            showStatus('음성 인식을 시작할 수 없습니다: ' + error.message, 'error');
         }
+        stopRecording();
     }
 }
 
@@ -431,10 +506,13 @@ function showStatus(message, type) {
     statusDisplay.textContent = message;
     statusDisplay.className = `status-display ${type}`;
     
+    // Show status longer for errors and warnings
+    const timeout = (type === 'error' || type === 'warning') ? 5000 : 3000;
+    
     setTimeout(() => {
         statusDisplay.textContent = '';
         statusDisplay.className = 'status-display';
-    }, 3000);
+    }, timeout);
 }
 
 function showLoading(show) {
